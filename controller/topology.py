@@ -168,7 +168,7 @@ def configure_transit_top_right_switch(switch_connection: P4SwitchConnection, en
         prefix_len=24, 
         egress_port=2, 
         src_mac="00:00:00:00:02:03", 
-        next_hop_mac="00:00:00:00:03:03"
+        next_hop_mac="00:00:00:00:04:02"
     )
 
     switch_connection.write_table_entry(int_to_previous_switch)
