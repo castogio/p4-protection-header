@@ -50,8 +50,8 @@ class P4SwitchConnection:
         self.connection.WriteTableEntry(entry)
         logging.warn(f'wrote table entry on {self.switch}')
 
-    def set_clone_session(self, clone_session: CloneSession) -> None:
-        replicas = [
+    def wite_protected_flow(self, clone_session: CloneSession) -> None:
+        replica = [
             {
                 "egress_port": clone_session.clone_port, 
                 "instance": clone_session.clone_instance_id
@@ -59,7 +59,7 @@ class P4SwitchConnection:
         ]
         clone_entry = self.switch.p4_api.buildCloneSessionEntry(
             clone_session.clone_session_id, 
-            replicas, 
+            replica, 
             0) # never truncate
         self.connection.WritePREEntry(clone_entry)
         logging.warn(f'created clone session {clone_session.clone_instance_id} on {self.switch}')

@@ -1,6 +1,8 @@
-
-from controller.p4switch import P4Switch, SwitchRoles, P4SwitchConnection
 from typing import Dict
+
+from controller.p4forwardingtables import SwitchTableEntryFactory
+from controller.p4clonesession import CloneSession
+from controller.p4switch import P4Switch, SwitchRoles, P4SwitchConnection
 
 def specify_switch_topology(p4_dataplane_path: str, bmv2_json_path: str) -> Dict[str,P4Switch]:
     """Create switch objects matching the mininet topology in topology.json"""
@@ -62,9 +64,6 @@ def specify_switch_topology(p4_dataplane_path: str, bmv2_json_path: str) -> Dict
     return topology
     
 
-from controller.p4forwardingtables import SwitchTableEntryFactory
-from controller.p4clonesession import CloneSession
-
 def configure_ingress_switch(switch_connection: P4SwitchConnection, entry_factory: SwitchTableEntryFactory) -> None:
     int_to_host_entry = entry_factory.get_ingress_MAC_entry(
         mac_addr="08:00:00:00:01:00", 
@@ -72,8 +71,7 @@ def configure_ingress_switch(switch_connection: P4SwitchConnection, entry_factor
     )
     switch_connection.write_table_entry(int_to_host_entry)
 
-    protected_session = CloneSession(clone_instance_id=1, clone_port=1, clone_session_id=500)
-    switch_connection.set_clone_session(protected_session)
+    protected_session = CloneSession(clone_instance_id=1, clone_port=2, clone_session_id=500)
     protection_header_entry = entry_factory.get_traffic_protect_entry(
         source_ip="10.0.1.100",
         destination_ip="10.0.2.100",
@@ -82,6 +80,7 @@ def configure_ingress_switch(switch_connection: P4SwitchConnection, entry_factor
         is_ph_egress=False,
         clone_session_id=protected_session.clone_session_id
     )
+    switch_connection.wite_protected_flow(protected_session)
     switch_connection.write_table_entry(protection_header_entry)
 
     working_route = entry_factory.get_routing_entry(dst_network="10.0.2.0", prefix_len=24, egress_port=3)
@@ -117,7 +116,6 @@ def configure_egress_switch(switch_connection: P4SwitchConnection, entry_factory
     switch_connection.write_table_entry(mac_to_backup)
 
     protected_session = CloneSession(clone_instance_id=1, clone_port=1, clone_session_id=500)
-    switch_connection.set_clone_session(protected_session)
     protection_header_entry = entry_factory.get_traffic_protect_entry(
         source_ip="10.0.1.100",
         destination_ip="10.0.2.100",
@@ -133,7 +131,7 @@ def configure_egress_switch(switch_connection: P4SwitchConnection, entry_factory
         dst_network="10.0.2.0", 
         prefix_len=24, 
         egress_port=1, 
-        src_mac="08:00:00:00:02:01", 
+        src_mac="08:00:00:00:02:00", 
         next_hop_mac="08:00:00:00:02:22"
     )
     switch_connection.write_table_entry(destination_route)

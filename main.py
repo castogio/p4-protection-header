@@ -12,6 +12,7 @@ from controller.p4switch import P4Switch
 # type aliases
 Path = str
 
+
 def main(p4_dataplane_info: Path, bmv2_json: Path) -> None:
     
     switch_topology: Dict[str, P4Switch] = tp.specify_switch_topology(p4_dataplane_info, bmv2_json)
