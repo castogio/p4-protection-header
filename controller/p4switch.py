@@ -1,10 +1,13 @@
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Dict, Any
 from enum import Enum
 
 from utils.p4runtime_lib.bmv2 import Bmv2SwitchConnection
 from utils.p4runtime_lib.helper import P4InfoHelper
+
+from controller.p4forwardingtables import TableEntry
+from controller.p4clonesession import CloneSession
 
 class P4SwitchConnection:
     """
@@ -37,8 +40,29 @@ class P4SwitchConnection:
             self.connection.shutdown()
         logging.warn(f'closing connection to {self.switch}')
     
-    def write_entry(self) -> None:
-        logging.warn(f'writing table entry on {self.switch}')
+    def write_table_entry(self, entry_info: TableEntry) -> None:
+        entry = self.switch.p4_api.buildTableEntry(
+            table_name=entry_info.table_name,
+            match_fields=entry_info.match_fields,
+            action_name=entry_info.action_name,
+            action_params=entry_info.action_params
+        )
+        self.connection.WriteTableEntry(entry)
+        logging.warn(f'wrote table entry on {self.switch}')
+
+    def set_clone_session(self, clone_session: CloneSession) -> None:
+        replicas = [
+            {
+                "egress_port": clone_session.clone_port, 
+                "instance": clone_session.clone_instance_id
+            }
+        ]
+        clone_entry = self.switch.p4_api.buildCloneSessionEntry(
+            clone_session.clone_session_id, 
+            replicas, 
+            0) # never truncate
+        self.connection.WritePREEntry(clone_entry)
+        logging.warn(f'created clone session {clone_session.clone_instance_id} on {self.switch}')
 
 
 class SwitchRoles(str, Enum):
@@ -69,4 +93,5 @@ class P4Switch:
 
     def __str__(self) -> str:
         return f'Switch {self.name}, id {self.id}, role {self.role}'
+
 

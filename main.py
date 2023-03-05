@@ -4,87 +4,47 @@ import os
 import logging
 from typing import Dict
 
-from controller.p4switch import P4Switch, SwitchRoles
+import controller.topology as tp
+from controller.p4forwardingtables import SwitchTableEntryFactory
+from controller.p4switch import P4Switch
+
 
 # type aliases
 Path = str
 
-def specify_switch_topology(p4_dataplane: Path, bmv2_json: Path) -> Dict[str,P4Switch]:
-    """Create switch objects matching the mininet topology in topology.json"""
-    topology: Dict[str,P4Switch] = dict()
-
-    topology['ingress_switch'] = P4Switch(
-        switch_id=0,
-        name='s1',
-        role=SwitchRoles.INGRESS,
-        uri=f'localhost:50051',
-        p4_dataplane_file_path=p4_dataplane,
-        bmv2_json_file_path=bmv2_json
-        )
-
-    topology['transit_up_left'] = P4Switch(
-        switch_id=1,
-        name='s2',
-        role=SwitchRoles.TRANSIT,
-        uri=f'localhost:50052',
-        p4_dataplane_file_path=p4_dataplane,
-        bmv2_json_file_path=bmv2_json
-        )
-    topology['transit_up_right'] = P4Switch(
-        switch_id=2,
-        name='s3',
-        role=SwitchRoles.TRANSIT,
-        uri=f'localhost:50053',
-        p4_dataplane_file_path=p4_dataplane,
-        bmv2_json_file_path=bmv2_json
-        )
-    
-    topology['egress_switch'] = P4Switch(
-        switch_id=3,
-        name='s4',
-        role=SwitchRoles.EGRESS,
-        uri=f'localhost:50054',
-        p4_dataplane_file_path=p4_dataplane,
-        bmv2_json_file_path=bmv2_json
-        )
-    
-    topology['transit_bottom_right'] = P4Switch(
-        switch_id=4,
-        name='s5',
-        role=SwitchRoles.TRANSIT,
-        uri=f'localhost:50055',
-        p4_dataplane_file_path=p4_dataplane,
-        bmv2_json_file_path=bmv2_json
-        )
-
-    topology['transit_bottom_left'] = P4Switch(
-        switch_id=5,
-        name='s6',
-        role=SwitchRoles.TRANSIT,
-        uri=f'localhost:50056',
-        p4_dataplane_file_path=p4_dataplane,
-        bmv2_json_file_path=bmv2_json
-        )
-
-    return topology
-    
-
 def main(p4_dataplane_info: Path, bmv2_json: Path) -> None:
-
-    # info_help = P4InfoHelper(p4_dataplane_info)
     
-    switch_topology = specify_switch_topology(p4_dataplane_info, bmv2_json)
+    switch_topology: Dict[str, P4Switch] = tp.specify_switch_topology(p4_dataplane_info, bmv2_json)
     logging.info(f'created switch topology')
+
+    entry_factory = SwitchTableEntryFactory()
 
     ingress_switch = switch_topology['ingress_switch']
     with ingress_switch.connect() as conn:
-        conn.write_entry()
+        tp.configure_ingress_switch(conn, entry_factory)
+    
+    egress_switch = switch_topology['egress_switch']
+    with egress_switch.connect() as conn:
+        tp.configure_egress_switch(conn, entry_factory)
+
+    egress_switch = switch_topology['transit_top_left']
+    with egress_switch.connect() as conn:
+        tp.configure_transit_top_left_switch(conn, entry_factory)
+
+    egress_switch = switch_topology['transit_top_right']
+    with egress_switch.connect() as conn:
+        tp.configure_transit_top_right_switch(conn, entry_factory)
+
+    egress_switch = switch_topology['transit_bottom_left']
+    with egress_switch.connect() as conn:
+        tp.configure_transit_bottom_left_switch(conn, entry_factory)
+
+    egress_switch = switch_topology['transit_bottom_right']
+    with egress_switch.connect() as conn:
+        tp.configure_transit_bottom_right_switch(conn, entry_factory)
 
 
 if __name__ == '__main__':
-
-
-
     parser = argparse.ArgumentParser(description='P4Runtime Controller')
     parser.add_argument('--p4info', help='p4info proto in text format from p4c',
                         type=str, action="store", required=False,
