@@ -3,15 +3,16 @@ import argparse
 import os
 
 import grpc
-from p4utils.p4runtime_lib.bmv2 import Bmv2SwitchConnection
-from p4utils.p4runtime_lib.helper import P4InfoHelper
-from p4utils.p4runtime_lib.switch import ShutdownAllSwitchConnections
+from utils.p4runtime_lib.bmv2 import Bmv2SwitchConnection
+from utils.p4runtime_lib.helper import P4InfoHelper
+from utils.p4runtime_lib.switch import ShutdownAllSwitchConnections
 
 SWITCH_TO_HOST_PORT = 1
 SWITCH_TO_SWITCH_PORT = 2
 
 
 def build_switch_connection(name: str, id: int) -> Bmv2SwitchConnection:
+    print(f'localhost:5005{name[1]}')
     return Bmv2SwitchConnection(
             name=name,
             address=f'localhost:5005{name[1]}',
