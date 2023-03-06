@@ -17,6 +17,6 @@ if __name__ == '__main__':
         print(f'sending seq {sequence} -- {time.time()}')
         bytes_seq = str(sequence).encode('utf-8')
         sock.sendto(bytes_seq, (DST_IP, DST_PORT))
-        time.sleep(1) # wait 1 sec
+        # time.sleep(1) # wait 1 sec
 
     print(f'DONE!')

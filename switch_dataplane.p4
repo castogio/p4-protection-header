@@ -17,9 +17,6 @@ const bit<16> ETHERTYPE_IPV4 = 0x0800;
 
 // IP Protocol header numbers
 const bit<8> PROTOCOL_PROTECTION_HEADER = 0xFA;
-// const bit<8> TYPE_TCP                = 0x06;
-// const bit<8> TYPE_UDP                = 0x17;
-
 
 // Protection Header metadata const
 #define MAX_CLONE_ID           65536
@@ -152,7 +149,6 @@ control MyIngress(inout headers hdr,
 
     register<cloneId_t>(PH_MAX_NUM_CONNECTIONS) ph_expected_next_clone_ids;
 
-
     action associate_protected_details(connectionID_t connection, bit<1> isPHIngressFlag, bit<1> isPHEgressFlag, sessionID_t sessionID) {
         meta.isProtected = true;
         meta.connectionId = connection;
@@ -160,6 +156,7 @@ control MyIngress(inout headers hdr,
         meta.isEgress  = (bool) isPHEgressFlag;
         meta.cloneSessionId = sessionID;
     }
+
     // hits in this table mean that the packet flow between (src, dst) needs to be procted
     // this table associates a (src, dst) to a session ID as specified by the controller
     table protected_connections {
@@ -215,60 +212,60 @@ control MyIngress(inout headers hdr,
 
     apply {
 
-        bool isResubmit = (standard_metadata.instance_type == PKT_INSTANCE_TYPE_RESUBMIT);
-        bool isForInterface = interface_mac_address.apply().hit;
+        @atomic {
 
-        if ((isForInterface || isResubmit) && hdr.ipv4.isValid()) {
+            bool isResubmit = (standard_metadata.instance_type == PKT_INSTANCE_TYPE_RESUBMIT);
+            bool isForInterface = interface_mac_address.apply().hit;
 
-            bool isProtectedTraffic = protected_connections.apply().hit;
+            if ((isForInterface || isResubmit) && hdr.ipv4.isValid()) {
 
-            if (!hdr.ph.isValid()) { // payload is NOT already protected
-                if (isProtectedTraffic) { // check if protection has to be applied
-                    if (meta.isIngress) {
+                bool isProtectedTraffic = protected_connections.apply().hit;
 
-                        cloneId_t previous_cloneId;
-                        ph_expected_next_clone_ids.read(previous_cloneId, meta.connectionId);
-                        meta.current_cloneId = (previous_cloneId + 1) % MAX_CLONE_ID;
-                        ph_expected_next_clone_ids.write(meta.connectionId, meta.current_cloneId);
+                if (!hdr.ph.isValid()) { // payload is NOT already protected
+                    if (isProtectedTraffic) { // check if protection has to be applied
+                        if (meta.isIngress) {
 
-                        clone_preserving_field_list(CloneType.I2E, meta.cloneSessionId, 1);
+                            cloneId_t previous_cloneId;
+                            ph_expected_next_clone_ids.read(previous_cloneId, meta.connectionId);
+                            meta.current_cloneId = (previous_cloneId + 1) % MAX_CLONE_ID;
+                            ph_expected_next_clone_ids.write(meta.connectionId, meta.current_cloneId);
+
+                            clone_preserving_field_list(CloneType.I2E, meta.cloneSessionId, 1);
+                        }
                     }
+                    working_routing_path_table.apply();
                 }
-                working_routing_path_table.apply();
+                else { // packet has PH already
+
+                    if (standard_metadata.instance_type == PKT_INSTANCE_TYPE_RESUBMIT) {
+                        // if it is a resubmit, just remove the PH
+                        bit<8> upperProt = hdr.ph.upperProtocol;
+                        hdr.ph.setInvalid();
+                        hdr.ipv4.setValid();
+                        hdr.ipv4.protocol = upperProt;
+                        isProtectedTraffic = false;
+                    }
+
+                    if (isProtectedTraffic) {
+                        cloneId_t received_cloneId = hdr.ph.cloneId;
+                        cloneId_t expected_cloneId;
+                        ph_expected_next_clone_ids.read(expected_cloneId, meta.connectionId);
+
+                        bool initial = (received_cloneId >= expected_cloneId) && ((received_cloneId - expected_cloneId) <= (MAX_CLONE_ID / 2)); 
+                        bool final   = (received_cloneId < expected_cloneId)  && ((expected_cloneId - received_cloneId) >= (MAX_CLONE_ID /2));
+
+                        if (initial || final) { // else silently drop if CLONE-ID already seen
+                            cloneId_t next_cloneId = (received_cloneId + 1) % MAX_CLONE_ID;
+                            ph_expected_next_clone_ids.write(meta.connectionId, next_cloneId);
+                            resubmit_preserving_field_list(0);
+                        }
+                    }
+                    else {
+                        working_routing_path_table.apply(); // perform regular routing
+                    }
+                }            
             }
-            else { // packet has PH already
-
-                if (standard_metadata.instance_type == PKT_INSTANCE_TYPE_RESUBMIT) {
-                    // if it is a resubmit, just remove the PH
-                    bit<8> upperProt = hdr.ph.upperProtocol;
-                    hdr.ph.setInvalid();
-                    hdr.ipv4.setValid();
-                    hdr.ipv4.protocol = upperProt;
-                    isProtectedTraffic = false;
-                }
-
-                if (isProtectedTraffic) {
-                    cloneId_t received_cloneId = hdr.ph.cloneId;
-                    cloneId_t expected_cloneId;
-                    ph_expected_next_clone_ids.read(expected_cloneId, meta.connectionId);
-
-                    // cloneId_t next_difference    = (expected_cloneId - received_cloneId) % MAX_CLONE_ID;
-                    // cloneId_t reverse_difference = (received_cloneId - expected_cloneId) % MAX_CLONE_ID;
-                    bool initial = (received_cloneId >= expected_cloneId) && ((received_cloneId - expected_cloneId) <= (MAX_CLONE_ID / 2)); 
-                    bool final   = (received_cloneId < expected_cloneId)  && ((expected_cloneId - received_cloneId) >= (MAX_CLONE_ID /2));
-
-                    if (initial || final) { // else silently drop if CLONE-ID already seen
-                        cloneId_t next_cloneId = (received_cloneId + 1) % MAX_CLONE_ID;
-                        ph_expected_next_clone_ids.write(meta.connectionId, next_cloneId);
-                        resubmit_preserving_field_list(0);
-                    }
-                }
-                else {
-                    working_routing_path_table.apply(); // perform regular routing
-                }
-            }            
         }
-
     }
 }
 
@@ -282,7 +279,6 @@ control MyEgress(inout headers hdr,
                  inout standard_metadata_t standard_metadata) {
 
     
-
     action drop() {
         mark_to_drop(standard_metadata);
     }
@@ -309,16 +305,16 @@ control MyEgress(inout headers hdr,
     }
 
     apply { 
-
-        if (meta.isIngress || standard_metadata.instance_type == PKT_INSTANCE_TYPE_INGRESS_CLONE) {
-            hdr.ph.setValid();
-            hdr.ph.cloneId = meta.current_cloneId;
-            hdr.ph.upperProtocol = hdr.ipv4.protocol;
-            hdr.ipv4.protocol = PROTOCOL_PROTECTION_HEADER;
-            hdr.ph.flags = 0x00; // set all the flags to 0
+        @atomic {
+            if (meta.isIngress || standard_metadata.instance_type == PKT_INSTANCE_TYPE_INGRESS_CLONE) {
+                hdr.ph.setValid();
+                hdr.ph.cloneId = meta.current_cloneId;
+                hdr.ph.upperProtocol = hdr.ipv4.protocol;
+                hdr.ipv4.protocol = PROTOCOL_PROTECTION_HEADER;
+                hdr.ph.flags = 0x00; // set all the flags to 0
+            }
+            next_hop_table.apply();
         }
-
-        next_hop_table.apply();
     }
 }
 
